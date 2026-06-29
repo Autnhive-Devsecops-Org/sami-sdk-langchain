@@ -17,7 +17,7 @@ from langchain_core.documents import Document
 from langchain_core.retrievers import BaseRetriever
 from pydantic import ConfigDict, Field, PrivateAttr
 
-from ._client import build_rag_api_client
+from ._client import bearer_header, build_rag_api_client
 from ._utils import to_serializable
 
 
@@ -88,6 +88,9 @@ class SamiRagRetriever(BaseRetriever):
             retriever_backend=self.retriever_backend,
         )
         call_kwargs: Dict[str, Any] = {}
+        auth = bearer_header(self.access_token)
+        if auth is not None:
+            call_kwargs["authorization"] = auth
         if self.request_timeout is not None:
             call_kwargs["_request_timeout"] = self.request_timeout
         return self._get_api().rag_query(request, **call_kwargs)

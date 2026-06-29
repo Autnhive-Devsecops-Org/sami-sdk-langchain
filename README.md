@@ -8,7 +8,7 @@ OpenAPI SDKs:
 | SDK | Branch | Service | Wrapped by |
 | --- | --- | --- | --- |
 | `sami_firewall_client` | `master` | AI Firewall (`/ai-firewall/firewall/...`) | `ChatSamiFirewall` |
-| `sami_rag_client` | `SDK_RAG_TEMP_ORPHAN` | RAG + RAGDefender (`/rag-defender/...`) | `SamiRagRetriever`, `SamiRagChain`, `SamiRagDefenderCompressor`, tools |
+| `sami_rag_client` | `SDK_RAG_TEMP_ORPHAN` | RAG (`/rag-defender/...`) | `SamiRagRetriever`, `SamiRagChain`, tools |
 
 ## Installation
 
@@ -39,8 +39,7 @@ pip install -e "./sami-langchain[rag]"      # rag only
 | `ChatSamiFirewall` (`BaseChatModel`) | `POST /ai-firewall/firewall/v1/prompt/text` | A guarded chat model; prompts are sanitised by the firewall before reaching the LLM. |
 | `SamiRagRetriever` (`BaseRetriever`) | `POST /v1/rag/query` | Returns RAGDefender-filtered context documents as LangChain `Document`s. |
 | `SamiRagChain` (`Runnable`) | `POST /v1/rag/query` | One-shot RAG: returns the synthesized `answer` plus supporting docs. |
-| `SamiRagDefenderCompressor` (`BaseDocumentCompressor`) | `POST /v1/defend` | Drops poisoned/injected docs; plugs into `ContextualCompressionRetriever`. |
-| `make_sami_rag_tools(...)` (`StructuredTool[]`) | ingest / quarantine / defend | Agent tools to manage the knowledge base. |
+| `make_sami_rag_tools(...)` (`StructuredTool[]`) | ingest / quarantine | Agent tools to manage the knowledge base. |
 
 ## Quick start
 
@@ -81,21 +80,7 @@ result = chain.invoke("How do I rotate my API key?")
 print(result.answer)
 ```
 
-### 4. RAGDefender as a compressor over your own retriever
-
-```python
-from langchain.retrievers import ContextualCompressionRetriever
-from langchain_sami import SamiRagDefenderCompressor
-
-guarded = ContextualCompressionRetriever(
-    base_compressor=SamiRagDefenderCompressor(
-        host="https://sami.example.com/rag-defender", tenant_id="acme"
-    ),
-    base_retriever=my_vectorstore.as_retriever(),
-)
-```
-
-### 5. Agent tools
+### 4. Agent tools
 
 ```python
 from langchain_sami import make_sami_rag_tools
@@ -103,7 +88,7 @@ from langchain_sami import make_sami_rag_tools
 tools = make_sami_rag_tools(
     host="https://sami.example.com/rag-defender", tenant_id="acme"
 )
-# -> [sami_ingest_sync, sami_approve_quarantine, sami_reject_quarantine, sami_defend_documents]
+# -> [sami_ingest_sync, sami_approve_quarantine, sami_reject_quarantine]
 ```
 
 See [`examples/`](./examples) for runnable scripts.

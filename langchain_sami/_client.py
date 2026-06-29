@@ -48,6 +48,25 @@ def _import_rag() -> Any:
     return sami_rag_client
 
 
+def bearer_header(access_token: Optional[str]) -> Optional[str]:
+    """Return the value to pass as the RAG SDK's per-call ``authorization`` arg.
+
+    Unlike the firewall client, the generated RAG client's
+    ``Configuration.auth_settings()`` is empty, so setting ``access_token`` on
+    the configuration never injects an ``Authorization`` header. Every RAG API
+    method instead accepts an ``authorization`` keyword whose value is copied
+    verbatim into the header, so callers must pass the full ``"Bearer <token>"``
+    string themselves. Returns ``None`` when no token is configured (the call is
+    then made unauthenticated, exactly as before).
+    """
+    if not access_token:
+        return None
+    token = access_token.strip()
+    if token.lower().startswith("bearer "):
+        return token
+    return f"Bearer {token}"
+
+
 def build_firewall_api_client(
     host: Optional[str] = None,
     access_token: Optional[str] = None,
