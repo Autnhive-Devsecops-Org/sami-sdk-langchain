@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "langchain-sami"
+version = "0.1.0"
+description = "LangChain integrations for the SAMI AI Firewall and RAG services"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Proprietary" }
+authors = [{ name = "Autnhive" }]
+dependencies = [
+    "langchain-core>=0.3.0,<0.4.0",
+    "pydantic>=2.11",
+    # The two generated SDKs are installed from git (see README). They are
+    # declared as optional extras below so this package can be built without a
+    # network connection; install one or both alongside it.
+]
+
+[project.optional-dependencies]
+# Pull the generated clients directly from the SDK repo branches.
+firewall = [
+    "sami-firewall-client @ git+https://github.com/Autnhive-Devsecops-Org/sami-sdk-python.git",
+]
+rag = [
+    "sami-rag-client @ git+https://github.com/Autnhive-Devsecops-Org/sami-sdk-python.git@SDK_RAG_TEMP_ORPHAN",
+]
+all = [
+    "sami-firewall-client @ git+https://github.com/Autnhive-Devsecops-Org/sami-sdk-python.git",
+    "sami-rag-client @ git+https://github.com/Autnhive-Devsecops-Org/sami-sdk-python.git@SDK_RAG_TEMP_ORPHAN",
+]
+
+[tool.setuptools.packages.find]
+include = ["langchain_sami*"]
