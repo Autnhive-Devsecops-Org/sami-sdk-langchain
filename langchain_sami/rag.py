@@ -15,8 +15,12 @@ from langchain_core.documents import Document
 from langchain_core.runnables import RunnableConfig, RunnableSerializable
 from pydantic import ConfigDict, Field, PrivateAttr
 
-from ._client import bearer_header, build_rag_api_client
-from ._utils import to_serializable
+from ._client import (
+    build_orchestrator_api,
+    build_rag_query_request,
+    rag_call_kwargs,
+)
+from ._utils import rag_response_metadata, to_serializable
 
 
 class SamiRagAnswer(Dict[str, Any]):
@@ -29,6 +33,11 @@ class SamiRagAnswer(Dict[str, Any]):
     @property
     def documents(self) -> List[Document]:
         return self.get("documents", [])
+
+    @property
+    def incident_id(self) -> Optional[str]:
+        """Firewall incident this query was recorded against, if any."""
+        return self.get("incident_id")
 
 
 class SamiRagChain(RunnableSerializable[Union[str, Dict[str, Any]], SamiRagAnswer]):
@@ -50,6 +59,15 @@ class SamiRagChain(RunnableSerializable[Union[str, Dict[str, Any]], SamiRagAnswe
     top_k: int = 10
     channel: Optional[str] = None
     retriever_backend: Optional[str] = None
+    tenant_id: Optional[str] = None
+    """Tenant id sent as the ``X-Tenant-Id`` header."""
+
+    incident_id: Optional[str] = None
+    """Existing firewall incident to attach this query to (``X-Incident-ID``)."""
+
+    request_id: Optional[str] = None
+    """Correlation id sent as the ``X-Request-ID`` header."""
+
     request_timeout: Optional[float] = Field(default=None, alias="timeout")
     client_kwargs: Dict[str, Any] = Field(default_factory=dict)
 
@@ -59,14 +77,11 @@ class SamiRagChain(RunnableSerializable[Union[str, Dict[str, Any]], SamiRagAnswe
 
     def _get_api(self) -> Any:
         if self._orchestrator_api is None:
-            import sami_rag_client
-
-            api_client = build_rag_api_client(
+            self._orchestrator_api = build_orchestrator_api(
                 host=self.host,
                 access_token=self.access_token,
                 **self.client_kwargs,
             )
-            self._orchestrator_api = sami_rag_client.ORCHESTRATORApi(api_client)
         return self._orchestrator_api
 
     @staticmethod
@@ -88,31 +103,31 @@ class SamiRagChain(RunnableSerializable[Union[str, Dict[str, Any]], SamiRagAnswe
         config: Optional[RunnableConfig] = None,
         **kwargs: Any,
     ) -> SamiRagAnswer:
-        import sami_rag_client
-
         query = self._coerce_query(input)
-        request = sami_rag_client.RagQueryRequest(
-            query=query,
+        overrides = input if isinstance(input, dict) else {}
+        incident_id = overrides.get("incident_id", self.incident_id)
+        request_id = overrides.get("request_id", self.request_id)
+
+        request = build_rag_query_request(
+            query,
             top_k=self.top_k,
             channel=self.channel,
             retriever_backend=self.retriever_backend,
+            incident_id=incident_id,
         )
-        call_kwargs: Dict[str, Any] = {}
-        auth = bearer_header(self.access_token)
-        if auth is not None:
-            call_kwargs["authorization"] = auth
-        if self.request_timeout is not None:
-            call_kwargs["_request_timeout"] = self.request_timeout
+        call_kwargs = rag_call_kwargs(
+            access_token=self.access_token,
+            request_id=request_id,
+            incident_id=incident_id,
+            tenant_id=self.tenant_id,
+            request_timeout=self.request_timeout,
+        )
 
         response = self._get_api().rag_query(request, **call_kwargs)
 
-        shared_metadata = {
-            "request_id": getattr(response, "request_id", None),
-            "tenant_id": getattr(response, "tenant_id", None),
-            "app_id": getattr(response, "app_id", None),
-        }
+        metadata = rag_response_metadata(response, include_defense=False)
         documents = [
-            Document(page_content=content, metadata={**shared_metadata, "doc_index": i})
+            Document(page_content=content, metadata={**metadata, "doc_index": i})
             for i, content in enumerate(getattr(response, "context_docs", []) or [])
         ]
 
@@ -124,5 +139,5 @@ class SamiRagChain(RunnableSerializable[Union[str, Dict[str, Any]], SamiRagAnswe
             policy_enforcement=to_serializable(
                 getattr(response, "policy_enforcement", None)
             ),
-            request_id=getattr(response, "request_id", None),
+            **metadata,
         )

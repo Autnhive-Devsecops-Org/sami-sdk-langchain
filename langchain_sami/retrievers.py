@@ -17,8 +17,12 @@ from langchain_core.documents import Document
 from langchain_core.retrievers import BaseRetriever
 from pydantic import ConfigDict, Field, PrivateAttr
 
-from ._client import bearer_header, build_rag_api_client
-from ._utils import to_serializable
+from ._client import (
+    build_orchestrator_api,
+    build_rag_query_request,
+    rag_call_kwargs,
+)
+from ._utils import rag_response_metadata
 
 
 class SamiRagRetriever(BaseRetriever):
@@ -50,10 +54,16 @@ class SamiRagRetriever(BaseRetriever):
     """Channel identifier (``web``, ``api``, ``mobile`` ...)."""
 
     retriever_backend: Optional[str] = None
-    """Optional retriever backend override."""
+    """Optional retriever backend override (``weaviate`` ...)."""
 
     tenant_id: Optional[str] = None
     """Tenant id sent as the ``X-Tenant-Id`` header."""
+
+    incident_id: Optional[str] = None
+    """Existing firewall incident to attach this query to (``X-Incident-ID``)."""
+
+    request_id: Optional[str] = None
+    """Correlation id sent as the ``X-Request-ID`` header."""
 
     request_timeout: Optional[float] = Field(default=None, alias="timeout")
     """Per-request timeout in seconds."""
@@ -68,31 +78,28 @@ class SamiRagRetriever(BaseRetriever):
 
     def _get_api(self) -> Any:
         if self._orchestrator_api is None:
-            import sami_rag_client
-
-            api_client = build_rag_api_client(
+            self._orchestrator_api = build_orchestrator_api(
                 host=self.host,
                 access_token=self.access_token,
                 **self.client_kwargs,
             )
-            self._orchestrator_api = sami_rag_client.ORCHESTRATORApi(api_client)
         return self._orchestrator_api
 
     def _run_query(self, query: str) -> Any:
-        import sami_rag_client
-
-        request = sami_rag_client.RagQueryRequest(
-            query=query,
+        request = build_rag_query_request(
+            query,
             top_k=self.top_k,
             channel=self.channel,
             retriever_backend=self.retriever_backend,
+            incident_id=self.incident_id,
         )
-        call_kwargs: Dict[str, Any] = {}
-        auth = bearer_header(self.access_token)
-        if auth is not None:
-            call_kwargs["authorization"] = auth
-        if self.request_timeout is not None:
-            call_kwargs["_request_timeout"] = self.request_timeout
+        call_kwargs = rag_call_kwargs(
+            access_token=self.access_token,
+            request_id=self.request_id,
+            incident_id=self.incident_id,
+            tenant_id=self.tenant_id,
+            request_timeout=self.request_timeout,
+        )
         return self._get_api().rag_query(request, **call_kwargs)
 
     def _get_relevant_documents(
@@ -104,15 +111,7 @@ class SamiRagRetriever(BaseRetriever):
         response = self._run_query(query)
         self._last_response = response
 
-        shared_metadata = {
-            "request_id": getattr(response, "request_id", None),
-            "tenant_id": getattr(response, "tenant_id", None),
-            "app_id": getattr(response, "app_id", None),
-            "defense": to_serializable(getattr(response, "defense", None)),
-            "policy_enforcement": to_serializable(
-                getattr(response, "policy_enforcement", None)
-            ),
-        }
+        shared_metadata = rag_response_metadata(response)
 
         documents: List[Document] = []
         for index, content in enumerate(getattr(response, "context_docs", []) or []):

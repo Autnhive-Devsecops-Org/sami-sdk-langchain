@@ -20,9 +20,14 @@ def main() -> None:
     for tool in tools:
         print(f"{tool.name}: {tool.description}")
 
+    file_url = os.environ.get("SAMI_INGEST_FILE_URL")
+    if not file_url:
+        print("\nSet SAMI_INGEST_FILE_URL to try an ingest.")
+        return
+
     # Direct invocation (an agent would call these via tool-calling):
-    ingest = next(t for t in tools if t.name == "sami_ingest_sync")
-    result = ingest.invoke({"data_source_id": "s3-handbook", "store_quarantine": True})
+    ingest = next(t for t in tools if t.name == "sami_ingest_file_url")
+    result = ingest.invoke({"file_url": file_url, "store_quarantine": True})
     print("\nIngest result:", result)
 
 

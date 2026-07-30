@@ -106,3 +106,27 @@ def to_serializable(value: Any) -> Any:
             except Exception:  # pragma: no cover - defensive
                 pass
     return value
+
+
+# Scalar ``RagQueryResponse`` fields worth carrying on every returned Document.
+_RAG_RESPONSE_SCALARS = ("request_id", "incident_id", "log_type", "tenant_id", "app_id")
+
+
+def rag_response_metadata(
+    response: Any, *, include_defense: bool = True
+) -> Dict[str, Any]:
+    """Collect the audit fields of a ``RagQueryResponse`` into a plain dict.
+
+    ``incident_id``, ``log_type`` and ``latency_ms`` were added to the response
+    model by the RAG SDK, so they are read defensively with ``getattr``.
+    """
+    metadata: Dict[str, Any] = {
+        field: getattr(response, field, None) for field in _RAG_RESPONSE_SCALARS
+    }
+    metadata["latency_ms"] = to_serializable(getattr(response, "latency_ms", None))
+    if include_defense:
+        metadata["defense"] = to_serializable(getattr(response, "defense", None))
+        metadata["policy_enforcement"] = to_serializable(
+            getattr(response, "policy_enforcement", None)
+        )
+    return metadata
